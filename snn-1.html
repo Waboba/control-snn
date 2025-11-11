@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modelo LIF</title>
+  <!-- Load D3.js -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+      /* Load Inter font */
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
+      /* Global Styling */
+      body {
+          font-family: 'Inter', sans-serif;
+          background-color: #f4f7f9; /* Light blue/gray background */
+          color: #1e293b;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 20px;
+          min-height: 100vh;
+      }
+      h1 {
+          color: #0d6efd;
+          margin-bottom: 5px;
+      }
+      h2 {
+          font-size: 1.25rem;
+          margin-top: 0;
+          margin-bottom: 5px;
+          color: #334155;
+      }
+
+      /* Graph Container Base */
+      .graph-container {
+          width: 600px; /* Reduced width slightly for better fit */
+          background-color: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          box-shadow: 0 8px 15px rgba(0, 0, 0, 0.05);
+          transition: transform 0.2s;
+      }
+      .graph-container:hover {
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+      }
+
+      /* --- Layout Styling (New) --- */
+      .main-graph-layout {
+          display: flex;
+          justify-content: center;
+          gap: 30px; /* Space between the left column and the right graph */
+      }
+      .left-column {
+          display: flex;
+          flex-direction: column;
+          /* The gap here creates the space between Graph F and Graph U */
+          gap: 20px;
+      }
+      /* Individual graph wrappers to hold title and container */
+      .graph-group {
+          display: flex;
+          flex-direction: column;
+      }
+
+      /* Fixed Height for F and U */
+      #graph-area-F, #graph-area-U {
+          height: 300px; /* Reduced fixed height for better visual stacking */
+      }
+
+      /* Calculated Height for C (Tall Graph) */
+      /* 300px (F) + 300px (U) + 20px (gap) = 620px */
+      #graph-area-C {
+          height: 300px;
+          margin-top: 32px; /* Adjusted to align its top edge visually with the top of F's title */
+      }
+
+      /* Control Panel & Button */
+      .control-panel {
+          margin-top: 30px;
+          padding: 20px;
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
+          background-color: #f8fafc;
+          width: 600px;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+      }
+      .control-panel label {
+          font-weight: 700;
+          font-size: 14px;
+          color: #475569;
+          margin-bottom: 5px;
+          display: block;
+      }
+      .pulse-button {
+          padding: 15px 30px;
+          font-size: 18px;
+          font-weight: bold;
+          border: none;
+          border-radius: 30px;
+          cursor: pointer;
+          transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+          background-color: #ff6347; /* Tomato Red default */
+          color: white;
+          box-shadow: 0 5px #d45138;
+          text-transform: uppercase;
+      }
+      .pulse-button:hover {
+          background-color: #e65236;
+      }
+      .pulse-button:active {
+          background-color: #d45138;
+          transform: translateY(2px);
+          box-shadow: 0 3px #a03c2a;
+      }
+      .pulse-active {
+          background-color: #10b981; /* Emerald Green when active */
+          box-shadow: 0 5px #0a9b6d;
+      }
+      .pulse-active:hover {
+          background-color: #0ea774;
+      }
+      .pulse-active:active {
+          background-color: #0a9b6d;
+          transform: translateY(2px);
+          box-shadow: 0 3px #067c55;
+      }
+
+      /* D3 styles for axes */
+      .axis path,
+      .axis line {
+          fill: none;
+          stroke: #94a3b8;
+          shape-rendering: crispEdges;
+      }
+      .threshold-line {
+          stroke: #f59e0b; /* Amber */
+          stroke-dasharray: 5, 5;
+          stroke-width: 2;
+      }
+      #graph-area-C path {
+          stroke-width: 5; /* Thicker line for the discrete spike */
+      }
+  </style>
+</head>
+<body>
+
+<h1>Modelo LIF en tiempo real</h1>
+<p style="margin-bottom: 30px; color: #64748b;">
+  Presione el botón para generar un pulso de entrada.
+</p>
+
+<div class="main-graph-layout">
+  <div class="left-column">
+    <!-- Graph 1: Input Function f(t) -->
+    <div class="graph-group">
+      <h2>1. Pulso de entrada</h2>
+      <div id="graph-area-F" class="graph-container">
+        <!-- D3 SVG will be appended here -->
+      </div>
+    </div>
+
+    <!-- Graph 2: State Function U(t) -->
+    <div class="graph-group">
+      <h2>2. Potencial de la membrana</h2>
+      <div id="graph-area-U" class="graph-container">
+        <!-- D3 SVG will be appended here -->
+      </div>
+    </div>
+  </div>
+
+  <div class="right-column">
+    <!-- Graph 3: Output Spike C(t) (TALL) -->
+    <div class="graph-group">
+      <h2>3. Output de la neurona</h2>
+      <div id="graph-area-C" class="graph-container">
+        <!-- D3 SVG will be appended here -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Control Panel -->
+<div class="control-panel">
+  <h3>Parámetros del sistema</h3>
+
+  <div style="display: flex; justify-content: space-around; align-items: center;">
+    <!-- B (Decay Factor) Control -->
+    <div style="width: 45%;">
+      <label for="b-slider">Tasa de descarga: <span id="b-value">0.98</span></label>
+      <input type="range" id="b-slider" min="0.9" max="1.0" step="0.001" value="0.980" style="width: 100%;" oninput="updateConstants()">
+      <p style="font-size: 12px; color: #666;">Más bajo, más rápido decae</p>
+    </div>
+
+    <!-- TAU_TH (Threshold) Control -->
+    <div style="width: 45%;">
+      <label for="tau-slider">Umbral sináptico: <span id="tau-value">1.0</span></label>
+      <input type="range" id="tau-slider" min="0.5" max="15" step="0.3" value="1.0" style="width: 100%;" oninput="updateConstants()">
+      <p style="font-size: 12px; color: #666;">Más alto, más difícil llegar a disparar </p>
+    </div>
+  </div>
+</div>
+
+<!-- Button Container -->
+<div class="button-container" style="margin-top: 30px;">
+  <button id="pulse-btn"
+          class="pulse-button"
+          onmousedown="setPulse(true)"
+          onmouseup="setPulse(false)"
+          ontouchstart="setPulse(true)"
+          ontouchend="setPulse(false)"
+          ontouchcancel="setPulse(false)">
+    Mantén presionado para generar un pulso
+  </button>
+</div>
+
+<script>
+  // --- System and Graph Configuration ---
+  const DURATION = 10000; // Total time window displayed (10 seconds)
+  const FREQUENCY = 50;   // Update frequency (50 ms per step)
+  const MAX_DATA_POINTS = Math.ceil(DURATION / FREQUENCY);
+
+  // Constants for U function (made into let variables for control)
+  let B = 0.98;         // Decay factor (B) - should be < 1
+  let TAU_TH = 1.0;     // Threshold (tau)
+  const OUTPUT_C = 1;   // Output constant C for c(t) = C * (U >= tau)
+
+  // Graph Dimensions
+  const FIXED_WIDTH = 600; // Matches CSS width
+  const FIXED_HEIGHT_NORMAL = 300; // Height for F and U
+  const FIXED_HEIGHT_TALL = 300; // Height for C: 300 (F) + 20 (gap) + 300 (U) = 620
+
+  const margin = { top: 20, right: 30, bottom: 40, left: 50 };
+  const width = FIXED_WIDTH - margin.left - margin.right;
+
+  // Global State
+  let isPulsing = false;
+  let dataF = []; // Data for f(t)
+  let dataU = []; // Data for U(t)
+  let dataC = []; // Data for C(t)
+  let U_previous = 0; // The U[t] value from the last step
+  let startTime = Date.now();
+
+  /**
+   * D3 Initialization Helper Function
+   * @param {string} containerId - Selector for the graph container.
+   * @param {number} yMax - Max value for the Y-axis domain.
+   * @param {string} yLabel - Label for the Y-axis.
+   * @param {string} color - Line color.
+   * @param {function} curveType - D3 curve function (e.g., d3.curveStepAfter).
+   * @param {number} fixedHeight - The total height of the container/SVG.
+   */
+  function setupGraph(containerId, yMax, yLabel, color, curveType, fixedHeight) {
+    const container = d3.select(containerId);
+
+    // Calculate the inner drawing height based on the passed fixedHeight
+    const h = fixedHeight - margin.top - margin.bottom;
+
+    // Create the SVG element
+    const svg = container.append("svg")
+      .attr("width", FIXED_WIDTH)
+      .attr("height", fixedHeight); // Use the provided container height
+
+    // Create the main drawing group
+    const g = svg.append("g")
+      .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+    // Scales (initialized with start time)
+    const x = d3.scaleTime()
+      .domain([startTime - DURATION, startTime])
+      .range([0, width]);
+
+    const y = d3.scaleLinear()
+      .domain([0, yMax])
+      .range([h, 0]); // Use the calculated inner height
+
+    // Axes (Initial Draw)
+    const xAxis = g.append("g")
+      .attr("class", "axis x-axis")
+      .attr("transform", `translate(0, ${h})`) // Use the calculated inner height
+      .call(d3.axisBottom(x).ticks(d3.timeSecond.every(1)).tickFormat(d3.timeFormat("%S.%L")));
+
+    const yAxis = g.append("g")
+      .attr("class", "axis y-axis")
+      .call(d3.axisLeft(y).ticks(3).tickSizeOuter(0));
+
+    // Axis labels
+    g.append("text")
+      .attr("transform", `translate(${width / 2}, ${h + margin.bottom - 5})`)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#666")
+      .text("Time (s)");
+
+    g.append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", 0 - margin.left)
+      .attr("x", 0 - (h / 2)) // Use the calculated inner height for rotation center
+      .attr("dy", "1em")
+      .attr("text-anchor", "middle")
+      .attr("fill", "#666")
+      .text(yLabel);
+
+    // Line Generator
+    const line = d3.line()
+      .x(d => x(d.time))
+      .y(d => y(d.value))
+      .curve(curveType);
+
+    // Line Path (Initial Draw)
+    const linePath = g.append("path")
+      .datum([])
+      .attr("fill", "none")
+      .attr("stroke", color)
+      .attr("stroke-width", 3)
+      .attr("d", line);
+
+    return { g, x, y, xAxis, linePath, line, h }; // Return inner height 'h' as well
+  }
+
+  // --- D3 Initialization for all graphs ---
+  // Graph F: uses normal height, step curve
+  const graphF = setupGraph("#graph-area-F", 1.2, "f(t) (Input Pulse)", "#ff4d4d", d3.curveStepAfter, FIXED_HEIGHT_NORMAL);
+  // Graph U: uses normal height, linear curve
+  const graphU = setupGraph("#graph-area-U", 15, "U(t) (State Variable)", "#0056b3", d3.curveLinear, FIXED_HEIGHT_NORMAL);
+  // Graph C: uses TALL height, step curve
+  const graphC = setupGraph("#graph-area-C", OUTPUT_C * 1.2, "c(t) (Output Spike)", "#20c997", d3.curveStepAfter, FIXED_HEIGHT_TALL);
+
+  // Initialize Threshold Line and Label on Graph U
+  graphU.tauLine = graphU.g.append("line")
+    .attr("class", "threshold-line")
+    .attr("x1", 0)
+    .attr("x2", width);
+
+  graphU.tauLabel = graphU.g.append("text")
+    .attr("x", width)
+    .attr("text-anchor", "end")
+    .attr("fill", "#f59e0b")
+    .style("font-size", "12px");
+
+
+  // --- Initialize Data Arrays ---
+  function initData() {
+    startTime = Date.now();
+    dataF = [];
+    dataU = [];
+    dataC = [];
+    U_previous = 0;
+    const now = Date.now();
+    // Pre-fill data to ensure the scrolling window starts full
+    for (let i = 0; i < MAX_DATA_POINTS; i++) {
+      const time = now - (MAX_DATA_POINTS - i) * FREQUENCY;
+      dataF.push({ time: time, value: 0 });
+      dataU.push({ time: time, value: 0 });
+      dataC.push({ time: time, value: 0 });
+    }
+  }
+
+  /**
+   * Reads slider values and updates global B and TAU_TH constants.
+   * Also updates the threshold line position and label.
+   */
+  function updateConstants() {
+    // Read B
+    const bSlider = document.getElementById('b-slider');
+    const bValueSpan = document.getElementById('b-value');
+    B = parseFloat(bSlider.value);
+    bValueSpan.textContent = B.toFixed(3);
+
+    // Read TAU_TH
+    const tauSlider = document.getElementById('tau-slider');
+    const tauValueSpan = document.getElementById('tau-value');
+    TAU_TH = parseFloat(tauSlider.value);
+    tauValueSpan.textContent = TAU_TH.toFixed(1);
+
+    // Update threshold line and label on Graph U immediately
+    graphU.tauLine
+      .attr("y1", graphU.y(TAU_TH))
+      .attr("y2", graphU.y(TAU_TH));
+
+    graphU.tauLabel
+      .attr("y", graphU.y(TAU_TH))
+      .attr("dy", "-5px")
+      .text(`Threshold τ=${TAU_TH.toFixed(1)}`);
+  }
+
+  initData();
+  updateConstants(); // Initial call to set parameters and draw threshold line
+
+  // --- Core Update Loop ---
+  function updateGraph() {
+    const now = Date.now();
+    const input_f = isPulsing ? 1 : 0; // f(t)
+
+    // --- 1. Calculate new U[t+1] using the recurrence relation ---
+
+    // Determine the output spike c(t)
+    const output_c = (U_previous >= TAU_TH) ? OUTPUT_C : 0; // c(t) = C * (U[t] >= tau_th)
+
+    // Calculate the threshold reset term: U_th = tau_th * (U[t] >= tau_th)
+    const U_th = (U_previous >= TAU_TH) ? TAU_TH : 0;
+
+    // U[t+1] = B * U[t] + input[t] - U_th
+    const U_current = (B * U_previous) + input_f - U_th;
+
+    // Update the previous state for the next loop
+    U_previous = U_current;
+
+    // --- 2. Update Data Arrays and Prune ---
+
+    dataF.push({ time: now, value: input_f });
+    if (dataF.length > MAX_DATA_POINTS) dataF.shift();
+
+    dataU.push({ time: now, value: U_current });
+    if (dataU.length > MAX_DATA_POINTS) dataU.shift();
+
+    dataC.push({ time: now, value: output_c });
+    if (dataC.length > MAX_DATA_POINTS) dataC.shift();
+
+
+    // --- 3. Update Scales' Domain (Shared X-Scale) ---
+    graphF.x.domain([now - DURATION, now]);
+    graphU.x.domain([now - DURATION, now]);
+    graphC.x.domain([now - DURATION, now]);
+
+    // --- 4. Redraw Lines ---
+    graphF.linePath.datum(dataF).attr("d", graphF.line);
+    graphU.linePath.datum(dataU).attr("d", graphU.line);
+    graphC.linePath.datum(dataC).attr("d", graphC.line);
+
+
+    // --- 5. Update X-Axes ---
+    graphF.xAxis.transition().duration(FREQUENCY).ease(d3.easeLinear)
+      .call(d3.axisBottom(graphF.x).ticks(d3.timeSecond.every(1)).tickFormat(d3.timeFormat("%S.%L")));
+
+    graphU.xAxis.transition().duration(FREQUENCY).ease(d3.easeLinear)
+      .call(d3.axisBottom(graphU.x).ticks(d3.timeSecond.every(1)).tickFormat(d3.timeFormat("%S.%L")));
+
+    graphC.xAxis.transition().duration(FREQUENCY).ease(d3.easeLinear)
+      .call(d3.axisBottom(graphC.x).ticks(d3.timeSecond.every(1)).tickFormat(d3.timeFormat("%S.%L")));
+
+    // Reapply D3 styles (for crisp axes)
+    d3.selectAll(".axis path, .axis line").attr("stroke", "#94a3b8");
+  }
+
+  // --- Button Interaction Handler ---
+  function setPulse(active) {
+    isPulsing = active;
+    const button = document.getElementById('pulse-btn');
+    if (active) {
+      button.textContent = "El pulso está siendo enviado";
+      button.classList.add('pulse-active');
+      graphF.linePath.attr("stroke", "#10b981"); // Green stroke when active
+    } else {
+      button.textContent = "Mantén presionado para generar un pulso";
+      button.classList.remove('pulse-active');
+      graphF.linePath.attr("stroke", "#ff4d4d"); // Red stroke when inactive
+    }
+  }
+
+  // --- Start Loop ---
+  setInterval(updateGraph, FREQUENCY);
+
+</script>
+</body>
+</html>
